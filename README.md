@@ -149,13 +149,17 @@ docker compose up -d --force-recreate --no-deps n8n
 3. Clique em **Add workflow** → **⋯** → **Import from File**
 4. Selecione `workflow-chatbot-telegram.json`
 
-**7. Configure a credencial do Telegram no N8N**
+**7. Configure o `TELEGRAM_BOT_TOKEN` no N8N**
+
+O token do bot do Telegram (`TELEGRAM_BOT_TOKEN`) é configurado diretamente na interface do N8N como credencial:
 
 1. No workflow importado, clique no nó **Telegram Trigger**
 2. Em **Credential to connect with**, clique em **Create New Credential**
-3. Cole o **Bot Token** obtido do BotFather
+3. No campo **Access Token**, cole o seu `TELEGRAM_BOT_TOKEN` (o token obtido do BotFather, no formato `123456:ABC-DEF...`)
 4. Clique em **Save**
-5. Repita para os nós **Envia Temperatura** e **Envia Erro** (selecione a mesma credencial criada)
+5. Repita para os nós **Envia Temperatura** e **Envia Erro** (selecione a mesma credencial já criada)
+
+> ⚠️ **Importante:** O `TELEGRAM_BOT_TOKEN` **não** é uma variável de ambiente no `.env` — ele é armazenado de forma segura e criptografada pelo N8N (usando a `N8N_ENCRYPTION_KEY`). Nunca suba este token no repositório.
 
 **8. Ative o workflow**
 
@@ -208,14 +212,15 @@ Telegram Weather Chatbot/
 
 ## 📋 Variáveis de Ambiente
 
-| Variável | Obrigatória | Descrição |
-|----------|:-----------:|-----------|
-| `OPENWEATHER_API_KEY` | ✅ | Chave da API OpenWeather |
-| `OPENROUTER_API_KEY` | ⭐ | Chave da API OpenRouter (para LLM) |
-| `WEBHOOK_URL` | ✅ | URL HTTPS do túnel Cloudflare |
-| `N8N_ENCRYPTION_KEY` | ✅ | Chave para criptografar credenciais do N8N |
-| `POSTGRES_USER` | ❌ | Usuário do PostgreSQL (padrão: `n8n`) |
-| `POSTGRES_PASSWORD` | ❌ | Senha do PostgreSQL (padrão: `n8n_password`) |
-| `POSTGRES_DB` | ❌ | Nome do banco (padrão: `n8n`) |
+| Variável | Obrigatória | Onde configurar | Descrição |
+|----------|:-----------:|:---------------:|-----------|
+| `TELEGRAM_BOT_TOKEN` | ✅ | UI do N8N | Token do bot obtido via @BotFather no Telegram |
+| `OPENWEATHER_API_KEY` | ✅ | `.env` | Chave da API OpenWeather |
+| `OPENROUTER_API_KEY` | ⭐ | `.env` | Chave da API OpenRouter (para LLM) |
+| `WEBHOOK_URL` | ✅ | `.env` | URL HTTPS do túnel Cloudflare |
+| `N8N_ENCRYPTION_KEY` | ✅ | `.env` | Chave para criptografar credenciais do N8N |
+| `POSTGRES_USER` | ❌ | `.env` | Usuário do PostgreSQL (padrão: `n8n`) |
+| `POSTGRES_PASSWORD` | ❌ | `.env` | Senha do PostgreSQL (padrão: `n8n_password`) |
+| `POSTGRES_DB` | ❌ | `.env` | Nome do banco (padrão: `n8n`) |
 
 > ⭐ A `OPENROUTER_API_KEY` é necessária para a funcionalidade LLM. Sem ela, o bot funciona com respostas determinísticas (fallback).

@@ -1,0 +1,450 @@
+{
+  "name": "Telegram Weather Chatbot",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-original-text",
+              "name": "originalText",
+              "value": "={{ $json.message.text }}",
+              "type": "string"
+            },
+            {
+              "id": "set-chat-id",
+              "name": "chatId",
+              "value": "={{ $json.message.chat.id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-captura",
+      "name": "Captura Mensagem",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENROUTER_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"qwen/qwen3-vl-235b-a22b-thinking\",\n  \"models\": [\"qwen/qwen3-vl-235b-a22b-thinking\", \"qwen/qwen3-next-80b-a3b-instruct:free\"],\n  \"route\": \"fallback\",\n  \"temperature\": 0.1,\n  \"max_tokens\": 80,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Você extrai nomes de cidades brasileiras. Responda APENAS com: Cidade,UF,BR (sempre termine com ,BR). Exemplos: São Paulo,SP,BR | Belo Horizonte,MG,BR | Colatina,ES,BR. Apelidos: sampa=São Paulo,SP,BR, BH=Belo Horizonte,MG,BR, floripa=Florianópolis,SC,BR, poa=Porto Alegre,RS,BR, rio=Rio de Janeiro,RJ,BR, brasilia=Brasília,DF,BR, cwb=Curitiba,PR,BR. Se não identificar, responda ERRO. Sem explicações.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"{{ $json.originalText }}\"\n    }\n  ]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "llm-extrai-cidade",
+      "name": "LLM Extrai Cidade",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const data = item.json;\n  const chatId = $('Captura Mensagem').first().json.chatId;\n  const originalText = $('Captura Mensagem').first().json.originalText || '';\n  let queue = '';\n\n  try {\n    const llmResponse = data.choices[0].message.content.trim();\n    const cleaned = llmResponse.replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim();\n    if (cleaned && cleaned !== 'ERRO') {\n      queue = cleaned;\n    }\n  } catch (e) {\n    // LLM falhou, usa fallback\n  }\n\n  // Fallback determinístico\n  if (!queue) {\n    queue = originalText.trim();\n  }\n\n  results.push({\n    json: { queue, chatId, originalText }\n  });\n}\n\nreturn results;"
+      },
+      "id": "code-parse-llm",
+      "name": "Processa Resposta LLM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.openweathermap.org/data/2.5/weather",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.queue }}"
+            },
+            {
+              "name": "units",
+              "value": "metric"
+            },
+            {
+              "name": "lang",
+              "value": "pt_br"
+            },
+            {
+              "name": "appid",
+              "value": "={{ $env.OPENWEATHER_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-openweather",
+      "name": "Consulta OpenWeather",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "condition-cod-200",
+              "leftValue": "={{ $json.cod }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-valida-resposta",
+      "name": "Resposta Válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENROUTER_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"qwen/qwen3-vl-235b-a22b-thinking\",\n  \"models\": [\"qwen/qwen3-vl-235b-a22b-thinking\", \"qwen/qwen3-next-80b-a3b-instruct:free\"],\n  \"route\": \"fallback\",\n  \"temperature\": 0.5,\n  \"max_tokens\": 150,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Você é um assistente de clima simpático. Receba os dados do clima e responda de forma curta, educada e natural em português brasileiro. Use emojis de clima. Inclua a temperatura e a condição. Máximo 2 frases.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Cidade: {{ $json.name }}, Temperatura: {{ $json.main.temp }}°C, Condição: {{ $json.weather[0].description }}, Humidade: {{ $json.main.humidity }}%, Vento: {{ $json.wind.speed }} m/s\"\n    }\n  ]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "llm-resposta-sucesso",
+      "name": "LLM Resposta Sucesso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const data = item.json;\n  const chatId = $('Processa Resposta LLM').first().json.chatId;\n  let message = '';\n\n  try {\n    const llmResponse = data.choices[0].message.content.trim();\n    const cleaned = llmResponse.replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim();\n    if (cleaned) {\n      message = cleaned;\n    }\n  } catch (e) {\n    // LLM falhou\n  }\n\n  // Fallback determinístico\n  if (!message) {\n    const weather = $('Resposta Válida?').first().json;\n    const cidade = weather.name || 'Desconhecida';\n    const temp = Math.round(weather.main.temp);\n    const desc = weather.weather[0].description || '';\n    message = `🌤️ A temperatura em ${cidade} é de ${temp}°C.\\nCondição: ${desc}.`;\n  }\n\n  results.push({\n    json: { chatId, message }\n  });\n}\n\nreturn results;"
+      },
+      "id": "code-formata-sucesso",
+      "name": "Formata Sucesso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "id": "telegram-send-sucesso",
+      "name": "Envia Temperatura",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1760,
+        -120
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENROUTER_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"qwen/qwen3-vl-235b-a22b-thinking\",\n  \"models\": [\"qwen/qwen3-vl-235b-a22b-thinking\", \"qwen/qwen3-next-80b-a3b-instruct:free\"],\n  \"route\": \"fallback\",\n  \"temperature\": 0.3,\n  \"max_tokens\": 120,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Você é um assistente de clima simpático. O usuário pediu o clima de uma cidade que não foi encontrada. Responda de forma educada em português brasileiro, informando que não encontrou a cidade e sugerindo o formato Cidade,UF (exemplo: São Paulo,SP). Use emoji ❌. Máximo 2 frases.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"A mensagem original do usuário foi: {{ $('Processa Resposta LLM').first().json.originalText }}\"\n    }\n  ]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "llm-resposta-erro",
+      "name": "LLM Resposta Erro",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const data = item.json;\n  const chatId = $('Processa Resposta LLM').first().json.chatId;\n  let message = '';\n\n  try {\n    const llmResponse = data.choices[0].message.content.trim();\n    const cleaned = llmResponse.replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim();\n    if (cleaned) {\n      message = cleaned;\n    }\n  } catch (e) {\n    // LLM falhou\n  }\n\n  // Fallback determinístico\n  if (!message) {\n    message = '❌ Cidade não encontrada. Use o formato Cidade,UF (ex.: São Paulo,SP).';\n  }\n\n  results.push({\n    json: { chatId, message }\n  });\n}\n\nreturn results;"
+      },
+      "id": "code-formata-erro",
+      "name": "Formata Erro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "id": "telegram-send-erro",
+      "name": "Envia Erro",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1760,
+        120
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Captura Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Captura Mensagem": {
+      "main": [
+        [
+          {
+            "node": "LLM Extrai Cidade",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Extrai Cidade": {
+      "main": [
+        [
+          {
+            "node": "Processa Resposta LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processa Resposta LLM": {
+      "main": [
+        [
+          {
+            "node": "Consulta OpenWeather",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta OpenWeather": {
+      "main": [
+        [
+          {
+            "node": "Resposta Válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resposta Válida?": {
+      "main": [
+        [
+          {
+            "node": "LLM Resposta Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LLM Resposta Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Resposta Sucesso": {
+      "main": [
+        [
+          {
+            "node": "Formata Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formata Sucesso": {
+      "main": [
+        [
+          {
+            "node": "Envia Temperatura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Resposta Erro": {
+      "main": [
+        [
+          {
+            "node": "Formata Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formata Erro": {
+      "main": [
+        [
+          {
+            "node": "Envia Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-02-21T17:40:00.000Z",
+  "versionId": "4"
+}
